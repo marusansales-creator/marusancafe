@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>まるさんCafe｜レジ</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; font-family:'Hiragino Sans','Noto Sans JP',sans-serif; background:#f5f2ee; overflow:hidden; }
+body { display:flex; flex-direction:column; }
+
+.top-tabs { display:flex; background:#3b2a1a; height:48px; flex-shrink:0; }
+.top-tab { flex:1; border:none; background:transparent; color:rgba(255,255,255,0.5); font-size:14px; font-weight:bold; cursor:pointer; border-bottom:3px solid transparent; }
+.top-tab.active { color:#fff; border-bottom-color:#f0d9a0; }
+.conn-indicator { position:fixed; top:12px; right:12px; font-size:10px; color:rgba(255,255,255,0.6); display:flex; align-items:center; gap:3px; z-index:100; }
+.conn-dot { width:6px; height:6px; border-radius:50%; background:#888; }
+.conn-dot.online { background:#4caf50; }
+
+.page { display:none; flex:1; overflow:hidden; }
+.page.active { display:flex; }
+
+/* ===== P1: 席状況 ===== */
+.p1-layout { display:flex; width:100%; height:100%; padding:12px; gap:12px; }
+.p1-map-wrap { flex:1; display:flex; flex-direction:column; }
+.p1-side { flex:0 0 180px; display:flex; flex-direction:column; gap:8px; }
+.section-label { font-size:10px; color:#aaa; letter-spacing:0.08em; margin-bottom:5px; }
+
+.seat-map { position:relative; flex:1 1 auto; background:#fff; border:2px solid #ddd; border-radius:12px; }
+.seat-dot { position:absolute; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:bold; line-height:1.2; transition:all 0.3s; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+.seat-dot .sn { font-size:13px; font-weight:bold; }
+.seat-dot .sp { font-size:7px; }
+.dot-empty    { background:#fff;    border:2px solid #b08050; color:#ccc; }
+.dot-occupied { background:#ffe5e5; border:2px solid #e07070; color:#b02020; }
+.dot-serving  { background:#fffbe0; border:2px solid #e8c020; color:#806000; }
+.dot-ready    { background:#e6f7ea; border:2px solid #4aaa5a; color:#1a6a2a; }
+.seat-1{left:4%;top:3%;width:19%;height:22%;} .seat-2{left:4%;top:30%;width:19%;height:18%;}
+.seat-3{left:4%;top:52%;width:19%;height:18%;} .seat-4{left:4%;top:74%;width:19%;height:22%;}
+.seat-5{left:42%;top:3%;width:19%;height:38%;} .seat-6{left:42%;top:48%;width:19%;height:20%;}
+.seat-7{left:42%;top:72%;width:19%;height:20%;} .seat-8{left:78%;top:43%;width:19%;height:20%;}
+
+.legend { display:flex; flex-direction:column; gap:5px; }
+.legend-item { display:flex; align-items:center; gap:5px; font-size:10px; color:#666; }
+.legend-dot { width:10px; height:10px; border-radius:2px; border:1.5px solid; flex-shrink:0; }
+.ld-empty{background:#fff;border-color:#b08050;} .ld-occ{background:#ffe5e5;border-color:#e07070;}
+.ld-serve{background:#fffbe0;border-color:#e8c020;} .ld-ready{background:#e6f7ea;border-color:#4aaa5a;}
+
+.seat-info-panel { background:#fff; border:2px solid #ddd; border-radius:10px; padding:10px; flex:1; overflow-y:auto; }
+.seat-info-panel h3 { font-size:10px; color:#aaa; margin-bottom:6px; }
+.si-row { padding:4px 0; border-bottom:1px solid #f5f2ee; font-size:10px; color:#555; }
+.si-row:last-child { border:none; }
+.si-ticket { font-weight:bold; color:#3b2a1a; font-size:11px; }
+
+/* ===== P2: オーダー ===== */
+.p2-layout { display:flex; width:100%; height:100%; }
+.col-left { flex:1 1 auto; display:flex; flex-direction:row; padding:12px 8px 12px 14px; gap:10px; min-width:0; border-right:1px solid #e8e0d8; }
+.col-right { flex:0 0 220px; display:flex; flex-direction:column; padding:12px 14px 12px 8px; gap:8px; }
+
+/* 番号札 */
+.ticket-section { width:100%; background:#fff; border:2px solid #ddd; border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:8px; box-shadow:0 1px 4px rgba(0,0,0,0.06); }
+.ticket-section label { font-size:10px; color:#aaa; letter-spacing:0.08em; display:block; margin-bottom:5px; }
+.ticket-display { text-align:center; font-size:40px; font-weight:bold; color:#3b2a1a; background:#f7f4f0; border-radius:10px; padding:10px; min-height:64px; width:100%; display:flex; align-items:center; justify-content:center; }
+.ticket-display.placeholder { color:#ccc; font-size:16px; }
+.numpad { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; width:100%; }
+.numpad-btn { padding:18px 0; border:2px solid #ddd; border-radius:12px; background:#fff; font-size:26px; font-weight:bold; color:#3b2a1a; cursor:pointer; text-align:center; box-shadow:0 2px 4px rgba(0,0,0,0.08); }
+.numpad-btn:active { background:#f0e8d8; }
+.numpad-btn.del-btn { font-size:20px; color:#e07070; border-color:#f5caca; }
+.numpad-btn.zero-btn { grid-column:span 2; }
+
+/* メニュー */
+.menu-section { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; min-height:0; }
+.tab-bar { display:flex; gap:4px; margin-bottom:6px; flex-shrink:0; flex-wrap:wrap; }
+.tab-btn { flex:1; min-width:55px; padding:5px 3px; border:2px solid #ddd; border-radius:7px; background:#fff; font-size:10px; font-weight:bold; color:#aaa; cursor:pointer; text-align:center; }
+.tab-btn.active { background:#3b2a1a; color:#fff; border-color:#3b2a1a; }
+.tab-btn.mgmt { background:#f0f0f0; color:#888; }
+.tab-btn.mgmt.active { background:#555; border-color:#555; color:#fff; }
+
+.menu-grid { flex:1; display:grid; grid-template-columns:repeat(auto-fill,minmax(95px,1fr)); gap:5px; overflow-y:auto; align-content:start; }
+.menu-item-btn { border:2px solid #ddd; border-radius:8px; background:#fff; padding:12px 6px; cursor:pointer; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+.menu-item-btn .mi-name { font-size:16px; font-weight:bold; color:#3b2a1a; display:block; }
+.menu-item-btn:hover { background:#fff3e8; border-color:#b08050; }
+.menu-item-btn:active { background:#f0e8d8; }
+.menu-item-btn.unavailable { opacity:0.35; cursor:not-allowed; }
+
+/* 管理 */
+.mgmt-panel { flex:1; overflow-y:auto; display:none; }
+.mgmt-form { background:#fff; border:2px solid #ddd; border-radius:10px; padding:10px; margin-bottom:8px; }
+.mgmt-form h3 { font-size:11px; color:#3b2a1a; margin-bottom:7px; }
+.form-row { display:flex; gap:5px; margin-bottom:5px; align-items:center; }
+.form-row label { font-size:10px; color:#aaa; width:42px; flex-shrink:0; }
+.form-input { flex:1; border:1.5px solid #ddd; border-radius:6px; padding:4px 6px; font-size:11px; color:#3b2a1a; }
+.form-input:focus { outline:none; border-color:#b08050; }
+.form-select { flex:1; border:1.5px solid #ddd; border-radius:6px; padding:4px 6px; font-size:11px; color:#3b2a1a; background:#fff; }
+.form-btn { padding:5px 12px; border:none; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; }
+.form-btn.add { background:#3b2a1a; color:#fff; }
+.mgmt-list { display:flex; flex-direction:column; gap:4px; }
+.mgmt-item { background:#fff; border:1.5px solid #ddd; border-radius:7px; padding:6px 8px; display:flex; align-items:center; gap:5px; cursor:grab; user-select:none; }
+.mgmt-item.dragging { opacity:0.4; }
+.mgmt-item.drag-over { border-color:#b08050; background:#fff8f0; }
+.drag-handle { font-size:12px; color:#ccc; flex-shrink:0; }
+.mgmt-item-cat { font-size:8px; color:#aaa; background:#f5f2ee; border-radius:3px; padding:1px 4px; flex-shrink:0; }
+.mgmt-item-name { font-size:11px; font-weight:bold; color:#3b2a1a; flex:1; }
+.mgmt-avail { font-size:9px; padding:2px 5px; border-radius:8px; cursor:pointer; border:1.5px solid; font-weight:bold; flex-shrink:0; }
+.mgmt-avail.on { background:#e6f7ea; border-color:#4aaa5a; color:#1a6a2a; }
+.mgmt-avail.off { background:#f5f5f5; border-color:#ccc; color:#aaa; }
+.mgmt-edit { font-size:9px; padding:2px 5px; border-radius:5px; border:1.5px solid #ddd; background:#fff; cursor:pointer; color:#666; flex-shrink:0; }
+.mgmt-del  { font-size:9px; padding:2px 5px; border-radius:5px; border:1.5px solid #f5caca; background:#fff; cursor:pointer; color:#e07070; flex-shrink:0; }
+.mgmt-color-btn { font-size:9px; padding:2px 6px; border-radius:5px; border:1.5px solid #ddd; background:#fff; cursor:pointer; color:#666; flex-shrink:0; }
+.color-dot { width:12px; height:12px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.color-swatch { width:32px; height:32px; border-radius:8px; border:2px solid transparent; cursor:pointer; transition:transform 0.1s; flex-shrink:0; }
+.color-swatch:active { transform:scale(0.9); }
+.color-swatch.selected { border-color:#3b2a1a; transform:scale(1.1); }
+.mgmt-takeout { font-size:9px; padding:2px 5px; border-radius:5px; border:1.5px solid; cursor:pointer; font-weight:bold; flex-shrink:0; }
+.mgmt-takeout.on  { background:#fff3e0; border-color:#f5a623; color:#c97a00; }
+.mgmt-takeout.off { background:#f5f5f5; border-color:#ccc; color:#aaa; }
+.cat-item { display:flex; align-items:center; gap:5px; background:#fff; border:1.5px solid #ddd; border-radius:7px; padding:5px 8px; }
+.cat-item-name { flex:1; font-size:11px; color:#3b2a1a; font-weight:bold; }
+.cat-edit-input { flex:1; border:1.5px solid #b08050; border-radius:5px; padding:3px 6px; font-size:11px; color:#3b2a1a; }
+.cat-save { font-size:9px; padding:2px 6px; border-radius:5px; border:1.5px solid #4aaa5a; background:#e6f7ea; color:#1a6a2a; cursor:pointer; }
+.cat-del  { font-size:9px; padding:2px 6px; border-radius:5px; border:1.5px solid #f5caca; background:#fff; color:#e07070; cursor:pointer; }
+.cat-edit { font-size:9px; padding:2px 6px; border-radius:5px; border:1.5px solid #ddd; background:#fff; color:#666; cursor:pointer; }
+
+/* 右カラム */
+.order-ticket-display { background:#fff; border:2px solid #ddd; border-radius:10px; padding:10px; text-align:center; flex-shrink:0; box-shadow:0 1px 4px rgba(0,0,0,0.06); }
+.order-ticket-display span { font-size:10px; color:#aaa; display:block; margin-bottom:2px; }
+.order-ticket-display .num { font-size:26px; font-weight:bold; color:#3b2a1a; }
+
+.order-list-wrap { flex:1; overflow-y:auto; background:#fff; border:2px solid #ddd; border-radius:10px; padding:8px; }
+.order-empty { text-align:center; color:#ccc; font-size:12px; padding:16px 0; }
+.order-line-wrap:last-child { border-bottom:none; }
+.ol-name { flex:1; font-size:16px; color:#3b2a1a; }
+.ol-qty  { font-size:16px; color:#888; flex-shrink:0; }
+.ol-minus { font-size:18px; color:#b08050; cursor:pointer; padding:0 4px; flex-shrink:0; line-height:1; }
+.ol-del   { font-size:11px; color:#e07070; cursor:pointer; padding:2px 4px; flex-shrink:0; }
+.ol-after { font-size:9px; color:#9b59b6; padding:1px 4px; background:#e8d5ff; border-radius:6px; flex-shrink:0; }
+
+.order-note { width:100%; border:1.5px solid #ddd; border-radius:7px; padding:5px 7px; font-size:11px; color:#3b2a1a; resize:none; font-family:inherit; flex-shrink:0; }
+.order-note:focus { outline:none; border-color:#b08050; }
+.send-btn { width:100%; padding:12px; background:#3b2a1a; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:bold; cursor:pointer; flex-shrink:0; box-shadow:0 2px 6px rgba(59,42,26,0.25); }
+.send-btn:disabled { background:#ccc; cursor:not-allowed; box-shadow:none; }
+.send-btn:active:not(:disabled) { background:#231a10; }
+.status-msg { font-size:11px; text-align:center; color:#aaa; flex-shrink:0; min-height:16px; }
+.status-msg.success { color:#2d7a2d; font-weight:bold; }
+.status-msg.error   { color:#c0392b; }
+
+/* フェーズ */
+.phase { display:flex; flex:1; overflow:hidden; }
+.phase-layout {
+  display:flex; flex:1; align-items:stretch;
+  background:#fff; overflow:hidden;
+}
+.phase-box {
+  flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  padding:20px 24px; gap:12px;
+}
+.phase-box:first-child { border-right:2px solid #e8e0d8; }
+.phase-title { font-size:18px; font-weight:bold; color:#3b2a1a; letter-spacing:0.05em; }
+.phase-divider { display:none; }
+.phase-go-wrap {
+  flex:0 0 200px; display:flex; align-items:center; justify-content:center;
+  border-left:2px solid #e8e0d8; padding:24px;
+}
+.phase-go-btn {
+  width:100%; padding:24px 16px;
+  background:#3b2a1a; color:#fff; border:none; border-radius:14px;
+  font-size:18px; font-weight:bold; cursor:pointer;
+  box-shadow:0 2px 8px rgba(59,42,26,0.25); white-space:nowrap;
+  writing-mode:horizontal-tb; line-height:1.4;
+}
+.phase-go-btn:disabled { background:#ccc; cursor:not-allowed; box-shadow:none; }
+.phase-go-btn:active:not(:disabled) { background:#231a10; }
+.skip-btn {
+  width:100%; padding:10px;
+  background:#fff; border:2px solid #ddd; border-radius:10px;
+  font-size:13px; color:#888; cursor:pointer; margin-top:4px;
+  font-weight:bold;
+}
+.skip-btn:active { background:#f5f2ee; }
+.order-info-bar { display:flex; align-items:center; gap:8px; padding:8px 0; flex-shrink:0; }
+.oi-badge { font-size:13px; font-weight:bold; color:#3b2a1a; background:#f7f4f0; border:1.5px solid #ddd; border-radius:8px; padding:4px 10px; }
+.oi-back { margin-left:auto; font-size:12px; color:#888; background:#fff; border:1.5px solid #ddd; border-radius:8px; padding:4px 10px; cursor:pointer; }
+.oi-back:active { background:#f0ece6; }
+/* 客数カウンター */
+.pax-counter {
+  position: fixed; bottom: 14px; right: 14px;
+  background: #3b2a1a; color: #fff;
+  border-radius: 12px; padding: 8px 14px;
+  font-size: 12px; display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 200;
+}
+.pax-counter .pc-label { font-size: 9px; color: rgba(255,255,255,0.6); letter-spacing: 0.05em; }
+.pax-counter .pc-num   { font-size: 22px; font-weight: bold; line-height: 1; }
+.pax-counter .pc-unit  { font-size: 10px; color: rgba(255,255,255,0.7); }
+
+/* 注文アイテム展開 */
+.order-line { display:flex; align-items:center; gap:4px; padding:5px 0; border-bottom:1px solid #f0ece6; border-radius:5px; }
+.order-line.after-meal { background:#f5edff; padding:4px 5px; }
+.order-line.after-meal .ol-name { color:#6a1a8a; }
+.order-line-wrap { border-bottom:1px solid #f0ece6; }
+.order-line-wrap:last-child { border-bottom:none; }
+.order-line-inner { display:flex; align-items:center; gap:4px; padding:5px 0; }
+.order-line-inner.after-meal { background:#f5edff; padding:4px 5px; border-radius:5px; }
+.order-line-inner.after-meal .ol-name { color:#6a1a8a; }
+
+/* トッピングパネル */
+.topping-panel {
+  background:#f9f6ff; border:1.5px solid #d8c8f0;
+  border-radius:8px; padding:8px; margin:0 0 6px 0;
+  display:none;
+}
+.topping-panel.open { display:block; }
+.topping-panel-title { font-size:10px; color:#888; margin-bottom:6px; letter-spacing:0.05em; }
+.topping-grid { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; }
+.topping-chip {
+  padding:4px 10px; border:1.5px solid #d0b8f0;
+  border-radius:20px; font-size:12px; color:#6a1a8a;
+  background:#fff; cursor:pointer; user-select:none; transition:all 0.12s;
+}
+.topping-chip.selected { background:#9b59b6; border-color:#9b59b6; color:#fff; }
+.topping-aftermeal-btn {
+  width:100%; padding:5px; border:1.5px solid #ddd;
+  border-radius:8px; background:#fff; font-size:11px;
+  color:#aaa; cursor:pointer; font-weight:bold; transition:all 0.12s;
+}
+.topping-aftermeal-btn.active { background:#f5edff; border-color:#9b59b6; color:#6a1a8a; }
+.topping-summary { font-size:10px; color:#9b59b6; margin-top:3px; }
+
+/* モーダル */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:none; align-items:center; justify-content:center; z-index:500; }
+.modal-overlay.show { display:flex; }
+.modal { background:#fff; border-radius:14px; padding:18px; width:280px; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+.modal h3 { font-size:13px; color:#3b2a1a; margin-bottom:10px; }
+.modal-row { display:flex; gap:5px; margin-bottom:7px; align-items:center; }
+.modal-row label { font-size:10px; color:#aaa; width:42px; flex-shrink:0; }
+.modal-actions { display:flex; gap:7px; margin-top:10px; }
+.modal-save   { flex:1; padding:8px; background:#3b2a1a; color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:bold; cursor:pointer; }
+.modal-cancel { flex:1; padding:8px; background:#f0f0f0; color:#666; border:none; border-radius:7px; font-size:12px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<!-- 客数カウンター -->
+<div class="pax-counter" id="paxCounter">
+  <span class="pc-label">本日の客数</span>
+  <span class="pc-num" id="paxTotal">0</span>
+  <span class="pc-unit">名</span>
+</div>
+
+<!-- 色選択モーダル -->
+<div class="modal-overlay" id="colorModal">
+  <div class="modal">
+    <h3>文字色を選択</h3>
+    <div id="colorSwatches" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <label style="font-size:11px;color:#aaa;">カスタム</label>
+      <input type="color" id="colorCustom" style="width:44px;height:32px;border:none;cursor:pointer;border-radius:6px;">
+      <button onclick="applyCustomColor()" style="padding:5px 10px;background:#3b2a1a;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;">適用</button>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="modal-cancel" onclick="closeColorPicker()">キャンセル</button>
+      <button class="modal-cancel" style="color:#e07070;border-color:#f5caca;" onclick="clearColor()">色をリセット</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h3>メニューを編集</h3>
+    <div class="modal-row"><label>名前</label><input class="form-input" id="editName" type="text"></div>
+    <div class="modal-row"><label>カテゴリ</label><select class="form-select" id="editCat"></select></div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeEdit()">キャンセル</button>
+      <button class="modal-save"   onclick="saveEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="top-tabs">
+  <button class="top-tab active" onclick="switchTab('p1')">🗺 席状況</button>
+  <button class="top-tab"        onclick="switchTab('p2')">📋 オーダー</button>
+  <div class="conn-indicator"><div class="conn-dot" id="connDot"></div><span id="connLabel">接続中...</span></div>
+</div>
+
+<!-- P1 -->
+<div class="page active" id="p1">
+  <div class="p1-layout">
+    <div class="p1-map-wrap">
+      <p class="section-label">席の状況</p>
+      <div class="seat-map" id="seatMap">
+        <div class="seat-dot seat-1 dot-empty" id="dot1"><span class="sn" id="dotnum1">―</span><span class="sp" id="dotsp1">空席</span></div>
+        <div class="seat-dot seat-2 dot-empty" id="dot2"><span class="sn" id="dotnum2">―</span><span class="sp" id="dotsp2">空席</span></div>
+        <div class="seat-dot seat-3 dot-empty" id="dot3"><span class="sn" id="dotnum3">―</span><span class="sp" id="dotsp3">空席</span></div>
+        <div class="seat-dot seat-4 dot-empty" id="dot4"><span class="sn" id="dotnum4">―</span><span class="sp" id="dotsp4">空席</span></div>
+        <div class="seat-dot seat-5 dot-empty" id="dot5"><span class="sn" id="dotnum5">―</span><span class="sp" id="dotsp5">空席</span></div>
+        <div class="seat-dot seat-6 dot-empty" id="dot6"><span class="sn" id="dotnum6">―</span><span class="sp" id="dotsp6">空席</span></div>
+        <div class="seat-dot seat-7 dot-empty" id="dot7"><span class="sn" id="dotnum7">―</span><span class="sp" id="dotsp7">空席</span></div>
+        <div class="seat-dot seat-8 dot-empty" id="dot8"><span class="sn" id="dotnum8">―</span><span class="sp" id="dotsp8">空席</span></div>
+      </div>
+    </div>
+    <div class="p1-side">
+      <p class="section-label">凡例</p>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot ld-empty"></div>空席</div>
+        <div class="legend-item"><div class="legend-dot ld-occ"></div>使用中</div>
+        <div class="legend-item"><div class="legend-dot ld-serve"></div>提供済み</div>
+        <div class="legend-item"><div class="legend-dot ld-ready"></div>準備完了</div>
+      </div>
+      <div class="seat-info-panel">
+        <h3>現在のオーダー</h3>
+        <div id="seatInfoList"><div style="color:#ccc;font-size:10px;">使用中の席はありません</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- P2：入力フェーズ -->
+<div class="page" id="p2">
+  <!-- フェーズA：人数・番号入力 -->
+  <div class="phase" id="phaseA">
+    <div class="phase-layout">
+      <div class="phase-box">
+        <div class="phase-title">🎫 番号札の番号</div>
+        <div class="ticket-display placeholder" id="ticketDisplay">番号を入力</div>
+        <div class="numpad" id="numpadTicket">
+          <button class="numpad-btn" onclick="numInput('ticket','1')">1</button>
+          <button class="numpad-btn" onclick="numInput('ticket','2')">2</button>
+          <button class="numpad-btn" onclick="numInput('ticket','3')">3</button>
+          <button class="numpad-btn" onclick="numInput('ticket','4')">4</button>
+          <button class="numpad-btn" onclick="numInput('ticket','5')">5</button>
+          <button class="numpad-btn" onclick="numInput('ticket','6')">6</button>
+          <button class="numpad-btn" onclick="numInput('ticket','7')">7</button>
+          <button class="numpad-btn" onclick="numInput('ticket','8')">8</button>
+          <button class="numpad-btn" onclick="numInput('ticket','9')">9</button>
+          <button class="numpad-btn zero-btn" onclick="numInput('ticket','0')">0</button>
+          <button class="numpad-btn del-btn"  onclick="numDelete('ticket')">⌫</button>
+        </div>
+      </div>
+      <div class="phase-divider"></div>
+      <div class="phase-box">
+        <div class="phase-title">👥 人数</div>
+        <div class="ticket-display placeholder" id="paxDisplay">人数を入力</div>
+        <div class="numpad" id="numpadPax">
+          <button class="numpad-btn" onclick="numInput('pax','1')">1</button>
+          <button class="numpad-btn" onclick="numInput('pax','2')">2</button>
+          <button class="numpad-btn" onclick="numInput('pax','3')">3</button>
+          <button class="numpad-btn" onclick="numInput('pax','4')">4</button>
+          <button class="numpad-btn" onclick="numInput('pax','5')">5</button>
+          <button class="numpad-btn" onclick="numInput('pax','6')">6</button>
+          <button class="numpad-btn" onclick="numInput('pax','7')">7</button>
+          <button class="numpad-btn" onclick="numInput('pax','8')">8</button>
+          <button class="numpad-btn" onclick="numInput('pax','9')">9</button>
+          <button class="numpad-btn zero-btn" onclick="numInput('pax','0')">0</button>
+          <button class="numpad-btn del-btn"  onclick="numDelete('pax')">⌫</button>
+        </div>
+        <button class="skip-btn" onclick="skipPax()">人数をスキップ</button>
+      </div>
+      <div class="phase-go-wrap">
+        <button class="phase-go-btn" id="phaseGoBtn" onclick="goToOrder()" disabled>メニュー選択へ →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- フェーズB：オーダー -->
+  <div class="phase" id="phaseB" style="display:none;">
+    <div class="p2-layout">
+      <div class="col-left">
+        <div class="order-info-bar">
+          <span class="oi-badge">🎫 {{ticket}}番</span>
+          <span class="oi-badge">👥 {{pax}}名</span>
+          <button class="oi-back" onclick="backToInput()">← 戻る</button>
+        </div>
+        <!-- メニュー -->
+        <div class="menu-section">
+          <div class="tab-bar" id="tabBar"></div>
+          <div class="menu-grid" id="menuGrid"></div>
+          <div class="mgmt-panel" id="mgmtPanel">
+            <div class="mgmt-form">
+              <h3>＋ メニューを追加</h3>
+              <div class="form-row"><label>名前</label><input class="form-input" id="newName" type="text" placeholder="例：いちご"></div>
+              <div class="form-row"><label>カテゴリ</label><select class="form-select" id="newCat"></select></div>
+              <div style="text-align:right;"><button class="form-btn add" onclick="addMenuItem()">追加</button></div>
+            </div>
+            <div class="mgmt-form">
+              <h3>📂 カテゴリ管理</h3>
+              <div class="form-row">
+                <label>名前</label>
+                <input class="form-input" id="newCatName" type="text" placeholder="例：季節限定">
+                <button class="form-btn add" onclick="addCategory()" style="margin-left:5px;">追加</button>
+              </div>
+              <div id="catList" style="display:flex;flex-direction:column;gap:4px;margin-top:5px;"></div>
+            </div>
+            <div class="mgmt-list" id="mgmtList"></div>
+          <!-- トッピング管理 -->
+          <div class="mgmt-form" style="margin-top:8px;">
+            <h3>🍨 トッピング管理</h3>
+            <div class="form-row">
+              <label>名前</label>
+              <input class="form-input" id="newTopping" type="text" placeholder="例：白玉">
+              <button class="form-btn add" onclick="addTopping()" style="margin-left:5px;">追加</button>
+            </div>
+            <div id="toppingList" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;"></div>
+          </div>
+          <!-- かき氷カテゴリ設定 -->
+          <div class="mgmt-form" style="margin-top:8px;">
+            <h3>🍧 かき氷カテゴリ設定</h3>
+            <p style="font-size:10px;color:#aaa;margin-bottom:6px;">チェックしたカテゴリがトッピング選択の対象になります</p>
+            <div id="kakigoriCatList" style="display:flex;flex-direction:column;gap:4px;"></div>
+          </div>
+          </div>
+        </div>
+      </div>
+      <!-- 右 -->
+      <div class="col-right">
+        <div class="order-ticket-display">
+          <span>番号札 / 人数</span>
+          <div class="num" id="orderTicketNum">―</div>
+        </div>
+        <div class="order-list-wrap">
+          <div class="order-empty" id="orderEmpty">メニューを選んでください</div>
+          <div id="orderLines"></div>
+        </div>
+        <textarea class="order-note" id="orderNote" rows="2" placeholder="備考（アレルギーなど）"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendOrder()" disabled>厨房に送信</button>
+        <div class="status-msg" id="statusMsg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+import { getDatabase, ref, set, push, onValue, remove, update } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey:"AIzaSyB35jQS934XvCyLcCOH3leYR9IUqP19XQU",
+  authDomain:"marusanregi.firebaseapp.com",
+  databaseURL:"https://marusanregi-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"marusanregi",
+  storageBucket:"marusanregi.firebasestorage.app",
+  messagingSenderId:"354570894697",
+  appId:"1:354570894697:web:1cdf104dddd0cf842211f8"
+};
+const app=initializeApp(firebaseConfig);
+const db=getDatabase(app);
+
+let seatsData={}, menusData={}, categoriesData=[], toppingsData=[], kakigoriCats=[];
+let activeTab=null, ticketStr='', orderItems={}, editingKey=null;
+
+window.switchTab=function(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.top-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.top-tab')[id==='p1'?0:1].classList.add('active');
+};
+
+onValue(ref(db,'.info/connected'),snap=>{
+  const on=snap.val();
+  document.getElementById('connDot').className='conn-dot'+(on?' online':'');
+  document.getElementById('connLabel').textContent=on?'接続済み':'未接続';
+});
+
+// 席状況（kitchen_seatsで厨房が管理）
+onValue(ref(db,'kitchen_seats'),snap=>{
+  seatsData=snap.val()||{};
+  updateMapDots();
+});
+
+// オーダー一覧（seats2）
+onValue(ref(db,'seats2'),snap=>{
+  const orders=snap.val()||{};
+  renderSeatInfo(orders);
+});
+
+function updateMapDots(){
+  for(let i=1;i<=8;i++){
+    const d=seatsData['seat'+i]||{status:'empty'};
+    const dot=document.getElementById('dot'+i);
+    if(!dot)continue;
+    const cls={occupied:'dot-occupied',serving:'dot-serving',ready:'dot-ready'}[d.status]||'dot-empty';
+    dot.className='seat-dot seat-'+i+' '+cls;
+    const numEl=document.getElementById('dotnum'+i);
+    const spEl=document.getElementById('dotsp'+i);
+    if(numEl) numEl.textContent=d.seatLabel||'―';
+    if(spEl)  spEl.textContent={empty:'空席',occupied:'使用中',serving:'提供済み',ready:'準備完了'}[d.status]||'空席';
+  }
+}
+
+function renderSeatInfo(orders){
+  const list=document.getElementById('seatInfoList');
+  const active=Object.entries(orders).filter(([,d])=>d.status==='occupied').sort((a,b)=>(a[1].orderedAt||0)-(b[1].orderedAt||0));
+  if(!active.length){list.innerHTML='<div style="color:#ccc;font-size:10px;">使用中の席はありません</div>';return;}
+  list.innerHTML=active.map(([k,d])=>{
+    const summary=d.orderSummary||'';
+    return`<div class="si-row"><span class="si-ticket">🎫${d.ticketNo||k}</span> ${summary}${d.note?'<br>📝'+d.note:''}</div>`;
+  }).join('');
+}
+
+onValue(ref(db,'menu2'),snap=>{
+  const data=snap.val()||{};
+  menusData=data.items||{};
+  categoriesData=data.categories||['かき氷','フロート','お茶・ドリンク','フード'];
+  toppingsData=data.toppings||[];
+  kakigoriCats=data.kakigoriCats||['かき氷'];
+  renderTabs(); renderMenuGrid(); renderMgmtList(); refreshCatSelects();
+  renderToppingList(); renderKakigoriCatList();
+});
+
+// テンキー（ticket / pax 共通）
+let paxStr='';
+window.numInput=function(type,d){
+  if(type==='ticket'){
+    if(ticketStr.length>=3)return;
+    const next=ticketStr+d; if(next==='0')return;
+    ticketStr=next;
+  } else {
+    if(paxStr.length>=2)return;
+    const next=paxStr+d; if(next==='0')return;
+    paxStr=next;
+  }
+  updateInputDisplays();
+};
+window.numDelete=function(type){
+  if(type==='ticket') ticketStr=ticketStr.slice(0,-1);
+  else paxStr=paxStr.slice(0,-1);
+  updateInputDisplays();
+};
+function updateInputDisplays(){
+  const tel=document.getElementById('ticketDisplay');
+  const pel=document.getElementById('paxDisplay');
+  if(tel){ if(!ticketStr){tel.textContent='番号を入力';tel.classList.add('placeholder');}else{tel.textContent=ticketStr;tel.classList.remove('placeholder');} }
+  if(pel){ if(!paxStr){pel.textContent='人数を入力';pel.classList.add('placeholder');}else{pel.textContent=paxStr;pel.classList.remove('placeholder');} }
+  const goBtn=document.getElementById('phaseGoBtn');
+  if(goBtn) goBtn.disabled=!ticketStr||!paxStr;
+}
+window.skipPax=function(){
+  paxStr='0'; // 0でスキップ扱い
+  updateInputDisplays();
+  goToOrder();
+};
+window.goToOrder=function(){
+  if(!ticketStr||!paxStr)return;
+  document.getElementById('phaseA').style.display='none';
+  document.getElementById('phaseB').style.display='flex';
+  // バッジ更新
+  const paxLabel = paxStr==='0' ? '追加注文' : paxStr+'名';
+  document.querySelectorAll('.oi-badge').forEach((el,i)=>{
+    if(i===0)el.textContent='🎫 '+ticketStr+'番';
+    if(i===1)el.textContent='👥 '+paxLabel;
+  });
+  document.getElementById('orderTicketNum').textContent=ticketStr+'番 / '+paxLabel;
+  orderItems={};
+  document.getElementById('orderNote').value='';
+  document.getElementById('statusMsg').textContent='';
+  renderOrderLines();
+};
+window.backToInput=function(){
+  document.getElementById('phaseA').style.display='flex';
+  document.getElementById('phaseB').style.display='none';
+};
+function updateSendBtn(){ document.getElementById('sendBtn').disabled=Object.keys(orderItems).length===0; }
+
+// タブ
+function renderTabs(){
+  const bar=document.getElementById('tabBar'); bar.innerHTML='';
+  categoriesData.forEach(cat=>{
+    const b=document.createElement('button');
+    b.className='tab-btn'+(cat===activeTab?' active':'');
+    b.textContent=cat;
+    b.onclick=()=>{activeTab=cat;renderTabs();renderMenuGrid();showMenuGrid();};
+    bar.appendChild(b);
+  });
+  const mg=document.createElement('button');
+  mg.className='tab-btn mgmt'+(activeTab==='__mgmt'?' active':'');
+  mg.textContent='⚙ 管理';
+  mg.onclick=()=>{activeTab='__mgmt';renderTabs();showMgmt();};
+  bar.appendChild(mg);
+  if(!activeTab||(!categoriesData.includes(activeTab)&&activeTab!=='__mgmt')){activeTab=categoriesData[0];renderTabs();}
+}
+function showMenuGrid(){document.getElementById('menuGrid').style.display='grid';document.getElementById('mgmtPanel').style.display='none';}
+function showMgmt(){document.getElementById('menuGrid').style.display='none';document.getElementById('mgmtPanel').style.display='block';}
+
+function renderMenuGrid(){
+  const grid=document.getElementById('menuGrid'); grid.innerHTML='';
+  if(activeTab==='__mgmt')return;
+  const items=Object.entries(menusData).filter(([,m])=>m.cat===activeTab).sort((a,b)=>{
+    const oa=a[1].order??9999,ob=b[1].order??9999;
+    return oa!==ob?oa-ob:(a[1].name||'').localeCompare(b[1].name||'','ja');
+  });
+  if(!items.length){grid.innerHTML='<div style="color:#ccc;font-size:11px;padding:12px;grid-column:1/-1;">メニューがありません</div>';return;}
+  items.forEach(([key,m])=>{
+    const btn=document.createElement('button');
+    btn.className='menu-item-btn'+(m.available?'':' unavailable');
+    btn.disabled=!m.available;
+    btn.innerHTML=`<span class="mi-name" style="color:${m.color||'#3b2a1a'}">${m.name}</span>`;
+    if(m.color) btn.style.borderColor=m.color;
+    btn.onclick=()=>addToOrder(key,m);
+    grid.appendChild(btn);
+  });
+}
+
+// オーダー
+function addToOrder(key,m){
+  if(!ticketStr){
+    document.getElementById('statusMsg').className='status-msg error';
+    document.getElementById('statusMsg').textContent='⚠ 先に番号札の番号を入力してください';return;
+  }
+  if(orderItems[key])orderItems[key].qty++;
+  else orderItems[key]={name:m.name,qty:1,afterMeal:false,takeout:m.takeout||false,isKakigori:kakigoriCats.includes(m.cat),toppings:[],color:m.color||''};
+  renderOrderLines();
+}
+function renderOrderLines(){
+  const lines=document.getElementById('orderLines');
+  const empty=document.getElementById('orderEmpty');
+  const entries=Object.entries(orderItems);
+  lines.innerHTML='';
+  empty.style.display=entries.length?'none':'block';
+  entries.forEach(([key,item])=>{
+    const wrap=document.createElement('div');
+    wrap.className='order-line-wrap';
+
+    // メイン行
+    const inner=document.createElement('div');
+    inner.className='order-line-inner'+(item.afterMeal&&!item.isKakigori?' after-meal':'');
+
+    // かき氷の場合：名前タップで展開
+    const toppingSum=item.toppings&&item.toppings.length?'（'+item.toppings.join('・')+'）':'';
+    const afterTag=item.afterMeal?'<span class="ol-after">食後</span>':'';
+    const nameDisplay=item.isKakigori
+      ? `<span class="ol-name" style="cursor:pointer;color:#6a1a8a;" onclick="toggleToppingPanel('${key}')">${item.name}<span style="font-size:10px;color:#9b59b6;">${toppingSum}</span></span>`
+      : `<span class="ol-name" onclick="toggleItemAfterMeal('${key}')">${item.name}</span>`;
+
+    inner.innerHTML=`
+      ${nameDisplay}
+      ${afterTag}
+      <span class="ol-minus" onclick="changeQty('${key}',-1)">－</span>
+      <span class="ol-qty">×${item.qty}</span>
+      <span class="ol-minus" onclick="changeQty('${key}',1)">＋</span>
+      <span class="ol-del" onclick="removeItem('${key}')">✕</span>`;
+    wrap.appendChild(inner);
+
+    // トッピングパネル（かき氷のみ）
+    if(item.isKakigori){
+      const panel=document.createElement('div');
+      panel.className='topping-panel';
+      panel.id='tp-'+key;
+      const chips=toppingsData.map(t=>{
+        const sel=item.toppings&&item.toppings.includes(t);
+        return`<span class="topping-chip${sel?' selected':''}" onclick="toggleTopping('${key}','${t}')">${t}</span>`;
+      }).join('');
+      panel.innerHTML=`
+        <div class="topping-panel-title">🍨 トッピング選択</div>
+        <div class="topping-grid">${chips||'<span style="font-size:10px;color:#ccc;">トッピングなし（管理で追加）</span>'}</div>
+        <button class="topping-aftermeal-btn${item.afterMeal?' active':''}" onclick="toggleItemAfterMeal('${key}')">
+          ${item.afterMeal?'🍽 食後（タップで解除）':'🍽 食後にする'}
+        </button>`;
+      wrap.appendChild(panel);
+    }
+
+    lines.appendChild(wrap);
+  });
+  updateSendBtn();
+}
+window.toggleToppingPanel=function(key){
+  const panel=document.getElementById('tp-'+key);
+  if(panel) panel.classList.toggle('open');
+};
+window.toggleTopping=function(key,topping){
+  if(!orderItems[key]) return;
+  const arr=orderItems[key].toppings||[];
+  const idx=arr.indexOf(topping);
+  if(idx>=0) arr.splice(idx,1);
+  else arr.push(topping);
+  orderItems[key].toppings=arr;
+  renderOrderLines();
+  // パネルを再度開く
+  setTimeout(()=>{
+    const panel=document.getElementById('tp-'+key);
+    if(panel) panel.classList.add('open');
+  },0);
+};
+window.toggleItemAfterMeal=function(key){
+  if(!orderItems[key])return;
+  orderItems[key].afterMeal=!orderItems[key].afterMeal;
+  renderOrderLines();
+};
+window.changeQty=(key,delta)=>{
+  if(!orderItems[key])return;
+  orderItems[key].qty+=delta;
+  if(orderItems[key].qty<=0)delete orderItems[key];
+  renderOrderLines();
+};
+window.removeItem=key=>{delete orderItems[key];renderOrderLines();};
+
+// ===== 客数カウンター =====
+function todayKey(){
+  const d=new Date();
+  return`pax_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}_${String(d.getDate()).padStart(2,'0')}`;
+}
+function loadPaxCounter(){
+  onValue(ref(db,'daily_pax/'+todayKey()),snap=>{
+    const val=snap.val()||0;
+    const el=document.getElementById('paxTotal');
+    if(el)el.textContent=val;
+  });
+}
+loadPaxCounter();
+
+window.sendOrder=async function(){
+  if(!ticketStr||!Object.keys(orderItems).length)return;
+  const btn=document.getElementById('sendBtn'); btn.disabled=true;
+  const itemsArr=Object.values(orderItems);
+  const summary=itemsArr.map(i=>`${i.name}×${i.qty}`).join('・');
+  const note=document.getElementById('orderNote').value.trim();
+  const key='ticket'+ticketStr+'_'+Date.now();
+  const paxNum=parseInt(paxStr)||0;
+  try{
+    await set(ref(db,'seats2/'+key),{
+      status:'occupied',
+      ticketNo:parseInt(ticketStr),
+      pax:paxNum>0?paxNum:null,
+      orderItems:itemsArr,
+      orderSummary:summary,
+      note:note,
+      orderedAt:Date.now()
+    });
+    // 客数を加算（スキップ時は加算しない）
+    if(paxNum>0){
+      const dayKey=todayKey();
+      const snap=await new Promise(res=>onValue(ref(db,'daily_pax/'+dayKey),res,{onlyOnce:true}));
+      const cur=snap.val()||0;
+      await set(ref(db,'daily_pax/'+dayKey), cur+paxNum);
+    }
+
+    document.getElementById('statusMsg').className='status-msg success';
+    document.getElementById('statusMsg').textContent='✅ 🎫'+ticketStr+'番を送信しました';
+    ticketStr=''; paxStr=''; orderItems={};
+    document.getElementById('orderNote').value='';
+    document.getElementById('phaseA').style.display='flex';
+    document.getElementById('phaseB').style.display='none';
+    updateInputDisplays(); renderOrderLines();
+  }catch(e){
+    document.getElementById('statusMsg').className='status-msg error';
+    document.getElementById('statusMsg').textContent='❌ 送信失敗：'+e.message;
+    btn.disabled=false;
+  }
+};
+
+// メニュー管理
+function renderMgmtList(){
+  renderCatList();
+  const list=document.getElementById('mgmtList'); list.innerHTML='';
+  const items=Object.entries(menusData).sort((a,b)=>{
+    const oa=a[1].order??9999,ob=b[1].order??9999;
+    return oa!==ob?oa-ob:(a[1].cat+a[1].name).localeCompare(b[1].cat+b[1].name,'ja');
+  });
+  let dragSrc=null;
+  items.forEach(([key,m])=>{
+    const div=document.createElement('div');
+    div.className='mgmt-item'; div.draggable=true; div.dataset.key=key;
+    const colorDot=m.color?`<span class="color-dot" style="background:${m.color};"></span>`:'<span class="color-dot" style="background:#eee;border:1.5px dashed #ccc;"></span>';
+    div.innerHTML=`<span class="drag-handle">☰</span><span class="mgmt-item-cat">${m.cat||''}</span><span class="mgmt-item-name" style="color:${m.color||'#3b2a1a'}">${m.name||''}</span>${colorDot}<button class="mgmt-color-btn" onclick="openColorPicker('${key}')">色</button><button class="mgmt-avail ${m.available?'on':'off'}" onclick="toggleAvail('${key}',${!m.available})">${m.available?'販売中':'停止中'}</button><button class="mgmt-takeout ${m.takeout?'on':'off'}" onclick="toggleTakeout('${key}',${!m.takeout})">${m.takeout?'🥡 T/O':'店内'}</button><button class="mgmt-edit" onclick="openEdit('${key}')">編集</button><button class="mgmt-del" onclick="deleteItem('${key}')">削除</button>`;
+    div.addEventListener('dragstart',e=>{dragSrc=div;setTimeout(()=>div.classList.add('dragging'),0);e.dataTransfer.effectAllowed='move';});
+    div.addEventListener('dragend',()=>{div.classList.remove('dragging');list.querySelectorAll('.mgmt-item').forEach(el=>el.classList.remove('drag-over'));});
+    div.addEventListener('dragover',e=>{e.preventDefault();if(dragSrc&&dragSrc!==div){list.querySelectorAll('.mgmt-item').forEach(el=>el.classList.remove('drag-over'));div.classList.add('drag-over');}});
+    div.addEventListener('drop',async e=>{
+      e.preventDefault();if(!dragSrc||dragSrc===div)return;div.classList.remove('drag-over');
+      if(dragSrc.compareDocumentPosition(div)&Node.DOCUMENT_POSITION_FOLLOWING)list.insertBefore(dragSrc,div.nextSibling);
+      else list.insertBefore(dragSrc,div);
+      const updates={};[...list.querySelectorAll('.mgmt-item')].forEach((el,idx)=>{updates['menu2/items/'+el.dataset.key+'/order']=idx;});
+      await update(ref(db),updates);
+    });
+    list.appendChild(div);
+  });
+}
+// ===== トッピング管理 =====
+function renderToppingList(){
+  const list=document.getElementById('toppingList');
+  if(!list)return;
+  list.innerHTML='';
+  toppingsData.forEach((t,idx)=>{
+    const span=document.createElement('span');
+    span.style.cssText='display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:#f0e8ff;border:1.5px solid #d0b8f0;border-radius:20px;font-size:11px;color:#6a1a8a;';
+    span.innerHTML=`${t}<span style="cursor:pointer;color:#c0392b;margin-left:2px;" onclick="deleteTopping(${idx})">✕</span>`;
+    list.appendChild(span);
+  });
+}
+window.addTopping=async function(){
+  const inp=document.getElementById('newTopping');
+  const name=inp.value.trim();
+  if(!name||toppingsData.includes(name))return;
+  toppingsData.push(name);
+  await set(ref(db,'menu2/toppings'),toppingsData);
+  inp.value='';
+};
+window.deleteTopping=async function(idx){
+  toppingsData.splice(idx,1);
+  await set(ref(db,'menu2/toppings'),toppingsData);
+};
+function renderKakigoriCatList(){
+  const list=document.getElementById('kakigoriCatList');
+  if(!list)return;
+  list.innerHTML='';
+  categoriesData.forEach(cat=>{
+    const div=document.createElement('div');
+    div.style.cssText='display:flex;align-items:center;gap:6px;padding:3px 0;';
+    const checked=kakigoriCats.includes(cat);
+    div.innerHTML=`<input type="checkbox" id="kc-${cat}" ${checked?'checked':''} onchange="toggleKakigoriCat('${cat}',this.checked)" style="width:16px;height:16px;cursor:pointer;"><label for="kc-${cat}" style="font-size:11px;color:#3b2a1a;cursor:pointer;">${cat}</label>`;
+    list.appendChild(div);
+  });
+}
+window.toggleKakigoriCat=async function(cat,checked){
+  if(checked){if(!kakigoriCats.includes(cat))kakigoriCats.push(cat);}
+  else{kakigoriCats=kakigoriCats.filter(c=>c!==cat);}
+  await set(ref(db,'menu2/kakigoriCats'),kakigoriCats);
+};
+
+window.addMenuItem=async function(){
+  const name=document.getElementById('newName').value.trim();
+  const cat=document.getElementById('newCat').value;
+  if(!name)return;
+  await push(ref(db,'menu2/items'),{name,cat,available:true});
+  document.getElementById('newName').value='';
+};
+window.toggleAvail=async(key,val)=>await update(ref(db,'menu2/items/'+key),{available:val});
+
+// ===== 色選択 =====
+const PRESET_COLORS = [
+  '#3b2a1a','#c0392b','#e07020','#d4a800',
+  '#2d7a2d','#1a6a8a','#6a1a8a','#888888',
+  '#e74c3c','#e67e22','#f1c40f','#27ae60',
+  '#2980b9','#8e44ad','#16a085','#c0392b',
+];
+let _colorPickerKey = null;
+
+window.openColorPicker = function(key) {
+  _colorPickerKey = key;
+  const swatches = document.getElementById('colorSwatches');
+  const cur = menusData[key]?.color||'';
+  swatches.innerHTML = PRESET_COLORS.map(c=>
+    `<div class="color-swatch${c===cur?' selected':''}" style="background:${c};" onclick="applyColor('${c}')"></div>`
+  ).join('');
+  if(cur) document.getElementById('colorCustom').value=cur;
+  document.getElementById('colorModal').classList.add('show');
+};
+window.applyColor = async function(color) {
+  if(!_colorPickerKey) return;
+  await update(ref(db,'menu2/items/'+_colorPickerKey),{color});
+  closeColorPicker();
+};
+window.applyCustomColor = async function() {
+  const color = document.getElementById('colorCustom').value;
+  await applyColor(color);
+};
+window.clearColor = async function() {
+  if(!_colorPickerKey) return;
+  await update(ref(db,'menu2/items/'+_colorPickerKey),{color:''});
+  closeColorPicker();
+};
+window.closeColorPicker = function() {
+  document.getElementById('colorModal').classList.remove('show');
+  _colorPickerKey = null;
+};
+window.toggleTakeout=async(key,val)=>await update(ref(db,'menu2/items/'+key),{takeout:val});
+window.deleteItem=async function(key){
+  if(!confirm('「'+menusData[key]?.name+'」を削除しますか？'))return;
+  await remove(ref(db,'menu2/items/'+key));
+};
+window.openEdit=function(key){
+  editingKey=key; const m=menusData[key];
+  document.getElementById('editName').value=m.name||'';
+  refreshEditCatSelect(m.cat);
+  document.getElementById('editModal').classList.add('show');
+};
+window.closeEdit=()=>{document.getElementById('editModal').classList.remove('show');editingKey=null;};
+window.saveEdit=async function(){
+  if(!editingKey)return;
+  await update(ref(db,'menu2/items/'+editingKey),{name:document.getElementById('editName').value.trim(),cat:document.getElementById('editCat').value});
+  closeEdit();
+};
+function renderCatList(){
+  const list=document.getElementById('catList');if(!list)return;list.innerHTML='';
+  categoriesData.forEach((cat,idx)=>{
+    const div=document.createElement('div');div.className='cat-item';div.id='catrow-'+idx;
+    div.innerHTML=`<span class="cat-item-name">${cat}</span><button class="cat-edit" onclick="startEditCat(${idx})">編集</button><button class="cat-del" onclick="deleteCat(${idx})">削除</button>`;
+    list.appendChild(div);
+  });
+}
+window.startEditCat=function(idx){
+  const row=document.getElementById('catrow-'+idx);if(!row)return;
+  row.innerHTML=`<input class="cat-edit-input" id="catinput-${idx}" value="${categoriesData[idx]}"><button class="cat-save" onclick="saveCat(${idx})">保存</button><button class="cat-del" onclick="renderCatList()">取消</button>`;
+  const inp=document.getElementById('catinput-'+idx);if(inp)inp.focus();
+};
+window.saveCat=async function(idx){
+  const inp=document.getElementById('catinput-'+idx);if(!inp)return;
+  const newName=inp.value.trim();if(!newName)return;
+  const oldName=categoriesData[idx]; categoriesData[idx]=newName;
+  await set(ref(db,'menu2/categories'),categoriesData);
+  for(const[key,m]of Object.entries(menusData)){if(m.cat===oldName)await update(ref(db,'menu2/items/'+key),{cat:newName});}
+};
+window.addCategory=async function(){
+  const inp=document.getElementById('newCatName');const name=inp.value.trim();
+  if(!name||categoriesData.includes(name))return;
+  categoriesData.push(name);await set(ref(db,'menu2/categories'),categoriesData);inp.value='';
+};
+window.deleteCat=async function(idx){
+  const name=categoriesData[idx];
+  const hasItems=Object.values(menusData).some(m=>m.cat===name);
+  if(hasItems&&!confirm(`「${name}」に属するメニューがあります。削除しますか？`))return;
+  categoriesData.splice(idx,1);await set(ref(db,'menu2/categories'),categoriesData);
+};
+function refreshCatSelects(){
+  ['newCat'].forEach(id=>{const sel=document.getElementById(id);if(!sel)return;const cur=sel.value;sel.innerHTML=categoriesData.map(c=>`<option value="${c}"${c===cur?' selected':''}>${c}</option>`).join('');});
+}
+function refreshEditCatSelect(current){
+  const sel=document.getElementById('editCat');
+  sel.innerHTML=categoriesData.map(c=>`<option value="${c}"${c===current?' selected':''}>${c}</option>`).join('');
+}
+</script>
+</body>
+</html>
